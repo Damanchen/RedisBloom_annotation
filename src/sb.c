@@ -167,6 +167,8 @@ const char *SBChain_GetEncodedChunk(const SBChain *sb, long long *curIter, size_
                                     size_t maxChunkSize) {
     // See into the offset.
     size_t offset = 0;
+
+    // 获取 iter 和 offest 定位到的 link
     SBLink *link = getLinkPos(sb, *curIter, &offset);
 
     if (!link) {
@@ -174,17 +176,22 @@ const char *SBChain_GetEncodedChunk(const SBChain *sb, long long *curIter, size_
         return NULL;
     }
 
+    // 如果 bytes - offset < maxChunkSize，len = bytes - offset
     *len = maxChunkSize;
     size_t linkRemaining = link->inner.bytes - offset;
     if (linkRemaining < *len) {
         *len = linkRemaining;
     }
 
+    // 返回的 iter += bytes - offset
     *curIter += *len;
     // printf("Returning offset=%lu\n", offset);
+
+    // 返回 link->inner.bf 中的数据
     return (const char *)(link->inner.bf + offset);
 }
 
+/* 获取 SBChain 元数据相关的信息 */
 char *SBChain_GetEncodedHeader(const SBChain *sb, size_t *hdrlen) {
     *hdrlen = sizeof(dumpedChainHeader) + (sizeof(dumpedChainLink) * sb->nfilters);
     dumpedChainHeader *hdr = RedisModule_Calloc(1, *hdrlen);

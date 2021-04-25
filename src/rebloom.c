@@ -46,6 +46,7 @@ static int getValue(RedisModuleKey *key, RedisModuleType *expType, void **sbout)
     if (key == NULL) {
         return SB_MISSING;
     }
+    // 获取 Key 的类型，
     int type = RedisModule_KeyType(key);
     if (type == REDISMODULE_KEYTYPE_EMPTY) {
         return SB_EMPTY;
@@ -404,19 +405,29 @@ static int BFDebug_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, i
 /**
  * BF.SCANDUMP <KEY> <ITER>
  * Returns an (iterator,data) pair which can be used for LOADCHUNK later on
+ * 返回一个(iterator,data)对，稍后可用于 LOADCHUNK 进行数据加载
  */
 static int BFScanDump_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_AutoMemory(ctx);
     if (argc != 3) {
+        // 返回参数错误
+        // 实际上调用的是 redis 源码 module.c 中的 RM_WrongArity方法
         return RedisModule_WrongArity(ctx);
     }
     const SBChain *sb = NULL;
+
+    // RM_OpenKey 打开一个 key 的句柄，方便后面 API 的操作
     RedisModuleKey *key = RedisModule_OpenKey(ctx, argv[1], REDISMODULE_READ);
+
+    // 检查该 key 的类型，并将对应的数据读取到 &sb，
     int status = bfGetChain(key, (SBChain **)&sb);
+
+    // 如果该 key 不存在或者类型有误，则返回错误
     if (status != SB_OK) {
         return RedisModule_ReplyWithError(ctx, statusStrerror(status));
     }
 
+    // 将参数中的 iter 转换为一个长整数，并保存到 &iter 中
     long long iter;
     if (RedisModule_StringToLongLong(argv[2], &iter) != REDISMODULE_OK) {
         return RedisModule_ReplyWithError(ctx, "Second argument must be numeric");
@@ -424,12 +435,15 @@ static int BFScanDump_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv
 
     RedisModule_ReplyWithArray(ctx, 2);
 
+    // 第一次 scandump 从 iter=0 开始，将 SBChain 的 EncodedHeader 输出
     if (iter == 0) {
         size_t hdrlen;
         char *hdr = SBChain_GetEncodedHeader(sb, &hdrlen);
         RedisModule_ReplyWithLongLong(ctx, SB_CHUNKITER_INIT);
         RedisModule_ReplyWithStringBuffer(ctx, (const char *)hdr, hdrlen);
         SB_FreeEncodedHeader(hdr);
+
+    // 将 SBChain 中 iter 对应的 link->inner.bf 输出
     } else {
         size_t bufLen = 0;
         const char *buf = SBChain_GetEncodedChunk(sb, &iter, &bufLen, MAX_SCANDUMP_SIZE);
@@ -442,6 +456,7 @@ static int BFScanDump_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv
 /**
  * BF.LOADCHUNK <KEY> <ITER> <DATA>
  * Incrementally loads a bloom filter.
+ * 增量加载
  */
 static int BFLoadChunk_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_AutoMemory(ctx);
@@ -981,6 +996,7 @@ static int CFDebug_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **argv, i
 
 #define CF_MIN_EXPANSION_VERSION 4
 
+// 生成 RDB 文件
 static void BFRdbSave(RedisModuleIO *io, void *obj) {
     // Save the setting!
     SBChain *sb = obj;
@@ -1009,6 +1025,7 @@ static void BFRdbSave(RedisModuleIO *io, void *obj) {
     }
 }
 
+// 加载 RDB 文件
 static void *BFRdbLoad(RedisModuleIO *io, int encver) {
     if (encver > BF_MIN_GROWTH_ENC) {
         return NULL;
@@ -1208,7 +1225,10 @@ static int rsStrcasecmp(const RedisModuleString *rs1, const char *s2) {
         return REDISMODULE_ERR;                                                                    \
     } while (0);
 
+// argc 表示载入 bloom module 时的启动参数
 int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+
+    // 初始化模块，bf是模块名称和文件名没关系，想定义什么定义什么。但最好和模块同名。
     if (RedisModule_Init(ctx, "bf", REBLOOM_MODULE_VERSION, REDISMODULE_APIVER_1) !=
         REDISMODULE_OK) {
         return REDISMODULE_ERR;
@@ -1224,10 +1244,12 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
         }
     }
 
+    // 后面加的参数必须是一对一对的
     if (argc % 2) {
         BAIL("Invalid number of arguments passed", NULL);
     }
 
+    // 判断启动参数的合法性
     for (int ii = 0; ii < argc; ii += 2) {
         if (!rsStrcasecmp(argv[ii], "initial_size")) {
             long long v;
@@ -1259,6 +1281,7 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
         }
     }
 
+// 注册 bf 和 cf 命令对应的处理逻辑
 #define CREATE_CMD(name, tgt, attr)                                                                \
     do {                                                                                           \
         if (RedisModule_CreateCommand(ctx, name, tgt, attr, 1, 1, 1) != REDISMODULE_OK) {          \
@@ -1307,6 +1330,7 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     CMSModule_onLoad(ctx, argv, argc);
     TopKModule_onLoad(ctx, argv, argc);
 
+    // typeprocs 为数组
     static RedisModuleTypeMethods typeprocs = {.version = REDISMODULE_TYPE_METHOD_VERSION,
                                                .rdb_load = BFRdbLoad,
                                                .rdb_save = BFRdbSave,
