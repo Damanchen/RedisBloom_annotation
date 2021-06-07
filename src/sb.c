@@ -213,8 +213,11 @@ char *SBChain_GetEncodedHeader(const SBChain *sb, size_t *hdrlen) {
 
 void SB_FreeEncodedHeader(char *s) { RedisModule_Free(s); }
 
+// 根据输入的 字符串 *buf 和 字符串长度 bufLen，生成一个 ChainFromHeader
 SBChain *SB_NewChainFromHeader(const char *buf, size_t bufLen, const char **errmsg) {
+    // ？？？
     const dumpedChainHeader *header = (const void *)buf;
+
     if (bufLen < sizeof(dumpedChainHeader)) {
         *errmsg = "ERR received bad data"; // LCOV_EXCL_LINE
         return NULL;                       // LCOV_EXCL_LINE

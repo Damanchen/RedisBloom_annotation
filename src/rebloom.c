@@ -59,6 +59,7 @@ static int getValue(RedisModuleKey *key, RedisModuleType *expType, void **sbout)
     }
 }
 
+// 获取 key 的类型和对应的数据，类型直接返回，数据存储到 **sbout 中
 static int bfGetChain(RedisModuleKey *key, SBChain **sbout) {
     return getValue(key, BFType, (void **)sbout);
 }
@@ -470,21 +471,33 @@ static int BFLoadChunk_RedisCommand(RedisModuleCtx *ctx, RedisModuleString **arg
         return RedisModule_ReplyWithError(ctx, "ERR Second argument must be numeric");
     }
 
+    // 对应Redis源码里的 RM_StringPtrLen
+    // 返回输入的字符串指针 *buf 和字符串长度 &bufLen
     size_t bufLen;
     const char *buf = RedisModule_StringPtrLen(argv[3], &bufLen);
 
+    // 获取一个Redis键的句柄，这样就可以调用其他api以键柄作为参数来执行对键的操作
     RedisModuleKey *key = RedisModule_OpenKey(ctx, argv[1], REDISMODULE_READ | REDISMODULE_WRITE);
     SBChain *sb;
     int status = bfGetChain(key, &sb);
+
+    // 如果该 Key 没有数据，并且 iter ==1，也就是第一次 loadChunk
     if (status == SB_EMPTY && iter == 1) {
         const char *errmsg;
+
+        // 将 SB_NewChainFromHeader 获取到的 filters、nfilters、options、size数据写入 *sb 对象
         SBChain *sb = SB_NewChainFromHeader(buf, bufLen, &errmsg);
+
         if (!sb) {
             return RedisModule_ReplyWithError(ctx, errmsg);
         } else {
+            // RedisModule_ModuleTypeSetValue 对应Redis源码里的 RM_ModuleTypeSetValue
+            // 调用 Redis 源码的 createModuleObject 和 *createObject，创建一个 BFType 的 key
             RedisModule_ModuleTypeSetValue(key, BFType, sb);
             return RedisModule_ReplyWithSimpleString(ctx, "OK");
         }
+
+    // key 错误，输出对应的错误提示
     } else if (status != SB_OK) {
         return RedisModule_ReplyWithError(ctx, statusStrerror(status));
     }
@@ -1281,7 +1294,7 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
         }
     }
 
-// 注册 bf 和 cf 命令对应的处理逻辑
+// 注册 bf 和 cf 命令对应的处理逻辑，就像Redis的 redisCommandTable 一样
 #define CREATE_CMD(name, tgt, attr)                                                                \
     do {                                                                                           \
         if (RedisModule_CreateCommand(ctx, name, tgt, attr, 1, 1, 1) != REDISMODULE_OK) {          \
